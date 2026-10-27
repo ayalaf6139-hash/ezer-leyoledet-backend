@@ -1,0 +1,51 @@
+# הגדרות פריסה ל-Render (Blueprint).
+# מסד הנתונים נמצא אצל ספק נפרד (Neon / Supabase), ולכן הוא לא מוגדר כאן –
+# את הכתובת שלו מכניסים ב-DATABASE_URL.
+services:
+  - type: web
+    name: ezer-leyoledet-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    # מתקין גם devDependencies (נדרשים ל-TypeScript ול-Prisma), יוצר את Prisma Client ומקמפל
+    buildCommand: npm ci --include=dev && npm run build
+    # מעדכן את מסד הנתונים (migrations), יוצר מנהלת אם הוגדרה, ומפעיל את השרת
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false # יתבקש בזמן היצירה – ה-Connection String מ-Neon / Supabase
+      - key: JWT_SECRET
+        generateValue: true # Render יוצר מחרוזת סודית אקראית
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGINS
+        sync: false # כתובת אתר ה-React, למשל https://ezer-leyoledet.onrender.com
+      - key: CLIENT_URL
+        sync: false # אותה כתובת של אתר ה-React
+      - key: DEFAULT_COLLECTION_POINT
+        sync: false
+      - key: TIMEZONE
+        value: Asia/Jerusalem
+      - key: BREVO_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: עזר ליולדת
+      - key: CRON_SECRET
+        generateValue: true
+      - key: SEED_ADMIN_EMAIL
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: SEED_DEMO_PASSWORD
+        sync: false

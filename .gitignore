@@ -1,0 +1,21 @@
+# תלויות – מותקנות מחדש עם npm install
+node_modules/
+
+# קוד מקומפל
+dist/
+
+# קובצי סודות – לעולם לא מעלים ל-GitHub!
+.env
+.env.test
+.env.local
+.env.*.local
+.env.backup*
+
+# יומנים וקבצים זמניים
+*.log
+npm-debug.log*
+coverage/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

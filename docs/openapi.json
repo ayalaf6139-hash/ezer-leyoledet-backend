@@ -1,0 +1,4609 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "עזר ליולדת – API",
+    "version": "1.0.0",
+    "description": "שרת API למערכת **\"עזר ליולדת\"** – תיאום ארוחות שבת למשפחות שמחות בקהילה.\n\n### איך בודקים מתוך Swagger\n1. פתחי את `POST /api/auth/login`, לחצי **Try it out** ואז **Execute** (פרטי ההתחברות לדוגמה כבר ממולאים).\n2. העתיקי את הערך של `token` מהתשובה.\n3. לחצי על הכפתור **Authorize** 🔓 למעלה, הדביקי את ה-Token (בלי המילה Bearer) ולחצי **Authorize**.\n4. מעכשיו כל הקריאות נשלחות עם ה-Token. כדי לבדוק 401 – לחצי **Logout** בחלון ה-Authorize ונסי שוב.\n5. כדי לבדוק 403 – התחברי כמתנדבת ונסי לקרוא לנתיב של מנהלת (למשל `GET /api/families`).\n\n### מבנה שגיאה אחיד\n```json\n{ \"error\": { \"code\": \"SLOT_TAKEN\", \"message\": \"המשבצת נתפסה, בחרי אחרת\" } }\n```\nבשגיאת ולידציה (400) מתווסף `details`: רשימה של `{ field, message }` – אפשר להציג כל הודעה ליד השדה המתאים בטופס.\n\n### תאריכים\nתאריך בלבד נשלח ומתקבל בפורמט `YYYY-MM-DD`. תאריך ושעה מוחזרים בפורמט ISO ב-UTC (יש להציג לפי שעון ישראל)."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "השרת הנוכחי"
+    }
+  ],
+  "tags": [
+    {
+      "name": "כללי",
+      "description": "בדיקת בריאות"
+    },
+    {
+      "name": "התחברות",
+      "description": "הרשמה, כניסה, פרטי המחוברת ואיפוס סיסמה"
+    },
+    {
+      "name": "משתמשות",
+      "description": "פרופיל אישי וניהול מתנדבות"
+    },
+    {
+      "name": "משפחות",
+      "description": "ניהול משפחות השמחות (מנהלת בלבד)"
+    },
+    {
+      "name": "מוצרים",
+      "description": "רשימת המאכלים שאפשר לבחור"
+    },
+    {
+      "name": "שבתות",
+      "description": "לוח השבוע, יצירה ופרסום של שבתות"
+    },
+    {
+      "name": "משבצות",
+      "description": "ניהול משבצות ידני (מנהלת בלבד)"
+    },
+    {
+      "name": "שיבוצים",
+      "description": "הרשמה למשבצות, ביטול וסימון \"נמסר\""
+    },
+    {
+      "name": "דוחות",
+      "description": "לוח בקרה וסיכומים (מנהלת בלבד)"
+    },
+    {
+      "name": "משימות מתוזמנות",
+      "description": "תזכורות שמופעלות על ידי cron-job.org"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "ה-Token שמתקבל מ-POST /api/auth/login. נשלח בכותרת: Authorization: Bearer <token>"
+      },
+      "cronSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Cron-Secret",
+        "description": "הקוד הסודי מ-CRON_SECRET"
+      }
+    },
+    "schemas": {
+      "Category": {
+        "type": "string",
+        "enum": [
+          "MAIN",
+          "SALAD",
+          "DESSERT",
+          "OTHER"
+        ],
+        "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "קוד קבוע לזיהוי השגיאה בקוד",
+                "example": "SLOT_TAKEN"
+              },
+              "message": {
+                "type": "string",
+                "description": "הודעה בעברית להצגה למשתמשת",
+                "example": "המשבצת נתפסה, בחרי אחרת"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "description": "שם השדה",
+                      "example": "email",
+                      "nullable": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "ההודעה",
+                      "example": "כתובת אימייל אינה תקינה"
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "הודעת הצלחה",
+            "example": "הפעולה בוצעה"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 2
+          },
+          "firstName": {
+            "type": "string",
+            "example": "שרה"
+          },
+          "lastName": {
+            "type": "string",
+            "example": "כהן"
+          },
+          "email": {
+            "type": "string",
+            "example": "sara@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "description": "בלי מקפים",
+            "example": "0521234567"
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "VOLUNTEER"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "ACTIVE",
+              "INACTIVE"
+            ],
+            "description": "PENDING=ממתינה לאישור, ACTIVE=פעילה, INACTIVE=מושבתת"
+          },
+          "receiveWeeklyEmail": {
+            "type": "boolean",
+            "description": "האם לקבל את מייל הפרסום השבועי"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "email",
+          "phone",
+          "role",
+          "status",
+          "receiveWeeklyEmail"
+        ]
+      },
+      "AdminUser": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/User"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "notes": {
+                "type": "string",
+                "description": "הערות פנימיות של המנהלת",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "VolunteerListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminUser"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "assignmentsCount": {
+                "type": "integer",
+                "description": "מספר השיבוצים שלא בוטלו",
+                "example": 4
+              }
+            }
+          }
+        ]
+      },
+      "Family": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "familyName": {
+            "type": "string",
+            "example": "משפחת לוי"
+          },
+          "contactPhone": {
+            "type": "string",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "nullable": true
+          },
+          "peopleCount": {
+            "type": "integer",
+            "description": "מספר נפשות",
+            "example": 7
+          },
+          "simchaType": {
+            "type": "string",
+            "description": "סוג השמחה",
+            "example": "בן"
+          },
+          "firstShabbat": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-17",
+            "description": "השבת הראשונה שבה המשפחה מקבלת"
+          },
+          "lastShabbat": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-07",
+            "description": "השבת האחרונה"
+          },
+          "dietaryNotes": {
+            "type": "string",
+            "description": "רגישויות והעדפות – גלוי גם למתנדבות",
+            "nullable": true
+          },
+          "deliveryNotes": {
+            "type": "string",
+            "description": "הערות מסירה – למנהלת בלבד",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "FINISHED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "familyName",
+          "peopleCount",
+          "simchaType",
+          "firstShabbat",
+          "lastShabbat",
+          "status"
+        ]
+      },
+      "FamilyInput": {
+        "type": "object",
+        "properties": {
+          "familyName": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100,
+            "example": "משפחת לוי"
+          },
+          "contactPhone": {
+            "type": "string",
+            "description": "טלפון ישראלי",
+            "example": "052-7654321",
+            "nullable": true
+          },
+          "address": {
+            "type": "string",
+            "maxLength": 200,
+            "nullable": true
+          },
+          "peopleCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "example": 7
+          },
+          "simchaType": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 50,
+            "example": "בן"
+          },
+          "firstShabbat": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-17"
+          },
+          "lastShabbat": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-11-07",
+            "description": "חייבת להיות אחרי firstShabbat או שווה לה"
+          },
+          "dietaryNotes": {
+            "type": "string",
+            "maxLength": 500,
+            "nullable": true
+          },
+          "deliveryNotes": {
+            "type": "string",
+            "maxLength": 500,
+            "nullable": true
+          }
+        },
+        "required": [
+          "familyName",
+          "peopleCount",
+          "simchaType",
+          "firstShabbat",
+          "lastShabbat"
+        ]
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "עוף בתנור"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MAIN",
+              "SALAD",
+              "DESSERT",
+              "OTHER"
+            ],
+            "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+          },
+          "categoryLabel": {
+            "type": "string",
+            "description": "שם הקטגוריה בעברית",
+            "example": "תבשיל"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "מוצר מושבת לא מוצג לבחירה"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "categoryLabel",
+          "isActive"
+        ]
+      },
+      "ProductInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100,
+            "example": "קציצות ברוטב"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MAIN",
+              "SALAD",
+              "DESSERT",
+              "OTHER"
+            ],
+            "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 300,
+            "nullable": true
+          }
+        },
+        "required": [
+          "name",
+          "category"
+        ]
+      },
+      "Shabbat": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "shabbatDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-24",
+            "description": "תאריך השבת"
+          },
+          "parasha": {
+            "type": "string",
+            "example": "נח"
+          },
+          "deliveryDeadline": {
+            "type": "string",
+            "format": "date-time",
+            "description": "מועד המסירה: יום חמישי 21:00 שעון ישראל (מחושב אוטומטית)"
+          },
+          "cancelDeadline": {
+            "type": "string",
+            "format": "date-time",
+            "description": "עד מתי מתנדבת יכולה לבטל: יום רביעי 21:00"
+          },
+          "collectionPoint": {
+            "type": "string",
+            "description": "כתובת נקודת האיסוף"
+          },
+          "message": {
+            "type": "string",
+            "description": "דברי פתיחה",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "PUBLISHED",
+              "CLOSED"
+            ],
+            "description": "DRAFT=טיוטה, PUBLISHED=פתוח להרשמה, CLOSED=סגור (גם אוטומטית אחרי מועד המסירה)"
+          },
+          "isOpenForRegistration": {
+            "type": "boolean",
+            "description": "האם אפשר להירשם עכשיו"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "shabbatDate",
+          "parasha",
+          "deliveryDeadline",
+          "cancelDeadline",
+          "collectionPoint",
+          "status",
+          "isOpenForRegistration"
+        ]
+      },
+      "ShabbatListItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Shabbat"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "familiesCount": {
+                "type": "integer",
+                "example": 3
+              },
+              "slotCounts": {
+                "$ref": "#/components/schemas/SlotCounts"
+              }
+            }
+          }
+        ]
+      },
+      "SlotCounts": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "example": 9
+          },
+          "open": {
+            "type": "integer",
+            "example": 4
+          },
+          "taken": {
+            "type": "integer",
+            "example": 4
+          },
+          "delivered": {
+            "type": "integer",
+            "example": 1
+          }
+        }
+      },
+      "Slot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 5
+          },
+          "shabbatId": {
+            "type": "integer",
+            "example": 1
+          },
+          "familyId": {
+            "type": "integer",
+            "example": 1
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MAIN",
+              "SALAD",
+              "DESSERT",
+              "OTHER"
+            ],
+            "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+          },
+          "categoryLabel": {
+            "type": "string",
+            "example": "תבשיל"
+          },
+          "portions": {
+            "type": "integer",
+            "description": "כמות מנות",
+            "example": 7
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "TAKEN",
+              "DELIVERED"
+            ],
+            "description": "OPEN=פנויה, TAKEN=תפוסה, DELIVERED=נמסרה"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "shabbatId",
+          "familyId",
+          "category",
+          "portions",
+          "status"
+        ]
+      },
+      "BoardSlot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "מזהה המשבצת – נשלח ב-POST /api/assignments",
+            "example": 5
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MAIN",
+              "SALAD",
+              "DESSERT",
+              "OTHER"
+            ],
+            "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+          },
+          "categoryLabel": {
+            "type": "string",
+            "example": "תבשיל"
+          },
+          "portions": {
+            "type": "integer",
+            "example": 7
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "TAKEN",
+              "DELIVERED"
+            ]
+          },
+          "productName": {
+            "type": "string",
+            "description": "במשבצת תפוסה – איזה מוצר נבחר",
+            "example": "עוף בתנור",
+            "nullable": true
+          },
+          "isMine": {
+            "type": "boolean",
+            "description": "האם המשבצת שלי"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "categoryLabel",
+          "portions",
+          "status",
+          "productName",
+          "isMine"
+        ]
+      },
+      "VolunteerFamily": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "כינוי אנונימי",
+            "example": "משפחה א'"
+          },
+          "peopleCount": {
+            "type": "integer",
+            "example": 7
+          },
+          "simchaType": {
+            "type": "string",
+            "example": "בן"
+          },
+          "dietaryNotes": {
+            "type": "string",
+            "example": "ללא גלוטן",
+            "nullable": true
+          }
+        },
+        "required": [
+          "label",
+          "peopleCount",
+          "simchaType"
+        ]
+      },
+      "VolunteerShabbat": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "shabbatDate": {
+            "type": "string",
+            "format": "date",
+            "example": "2026-10-24"
+          },
+          "parasha": {
+            "type": "string",
+            "example": "נח"
+          },
+          "deliveryDeadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancelDeadline": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "collectionPoint": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PUBLISHED",
+              "CLOSED"
+            ]
+          },
+          "isOpenForRegistration": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CurrentBoard": {
+        "type": "object",
+        "properties": {
+          "shabbat": {
+            "$ref": "#/components/schemas/VolunteerShabbat",
+            "nullable": true
+          },
+          "slotCounts": {
+            "$ref": "#/components/schemas/SlotCounts",
+            "nullable": true
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/VolunteerFamily"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "slots": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BoardSlot"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "shabbat",
+          "families"
+        ]
+      },
+      "AdminBoardAssignment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DELIVERED"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "example": "עוף בתנור"
+              }
+            }
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "firstName": {
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "AdminBoard": {
+        "type": "object",
+        "properties": {
+          "shabbat": {
+            "$ref": "#/components/schemas/Shabbat"
+          },
+          "slotCounts": {
+            "$ref": "#/components/schemas/SlotCounts"
+          },
+          "families": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Family"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "slots": {
+                      "type": "array",
+                      "items": {
+                        "allOf": [
+                          {
+                            "$ref": "#/components/schemas/Slot"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "assignment": {
+                                "$ref": "#/components/schemas/AdminBoardAssignment",
+                                "nullable": true
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "distributionListMessage": {
+            "type": "string",
+            "description": "הודעה מוכנה להעתקה לרשימת התפוצה (אחרי פרסום)",
+            "nullable": true
+          }
+        },
+        "required": [
+          "shabbat",
+          "slotCounts",
+          "families"
+        ]
+      },
+      "Assignment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DELIVERED",
+              "CANCELLED"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "canCancel": {
+            "type": "boolean",
+            "description": "האם אפשר עדיין לבטל (שיבוץ פעיל ולפני רביעי 21:00)"
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "example": "עוף בתנור"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "MAIN",
+                  "SALAD",
+                  "DESSERT",
+                  "OTHER"
+                ],
+                "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+              }
+            }
+          },
+          "slot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "MAIN",
+                  "SALAD",
+                  "DESSERT",
+                  "OTHER"
+                ],
+                "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+              },
+              "categoryLabel": {
+                "type": "string"
+              },
+              "portions": {
+                "type": "integer"
+              }
+            }
+          },
+          "family": {
+            "$ref": "#/components/schemas/VolunteerFamily"
+          },
+          "shabbat": {
+            "$ref": "#/components/schemas/VolunteerShabbat"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "canCancel",
+          "product",
+          "slot",
+          "family",
+          "shabbat"
+        ]
+      },
+      "AdminAssignment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 3
+          },
+          "slotId": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "productId": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DELIVERED",
+              "CANCELLED"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "deliveredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "product": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "MAIN",
+                  "SALAD",
+                  "DESSERT",
+                  "OTHER"
+                ],
+                "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+              }
+            }
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "firstName": {
+                "type": "string"
+              },
+              "lastName": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "phone": {
+                "type": "string"
+              }
+            }
+          },
+          "slot": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "category": {
+                "type": "string",
+                "enum": [
+                  "MAIN",
+                  "SALAD",
+                  "DESSERT",
+                  "OTHER"
+                ],
+                "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+              },
+              "categoryLabel": {
+                "type": "string"
+              },
+              "portions": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "OPEN",
+                  "TAKEN",
+                  "DELIVERED"
+                ]
+              }
+            }
+          },
+          "family": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "familyName": {
+                "type": "string"
+              },
+              "peopleCount": {
+                "type": "integer"
+              }
+            }
+          },
+          "shabbat": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "shabbatDate": {
+                "type": "string",
+                "format": "date",
+                "example": "2026-10-24"
+              },
+              "parasha": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "DRAFT",
+                  "PUBLISHED",
+                  "CLOSED"
+                ]
+              }
+            }
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "product",
+          "user",
+          "slot",
+          "family",
+          "shabbat"
+        ]
+      },
+      "AssignmentResult": {
+        "description": "מתנדבת מקבלת Assignment, מנהלת מקבלת AdminAssignment",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Assignment"
+          },
+          {
+            "$ref": "#/components/schemas/AdminAssignment"
+          }
+        ]
+      },
+      "ReportSummary": {
+        "type": "object",
+        "properties": {
+          "slotCounts": {
+            "$ref": "#/components/schemas/SlotCounts"
+          },
+          "familiesCount": {
+            "type": "integer",
+            "example": 3
+          },
+          "volunteersCount": {
+            "type": "integer",
+            "example": 4
+          },
+          "totalPortions": {
+            "type": "integer",
+            "example": 54
+          },
+          "familiesMissing": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "familyId": {
+                  "type": "integer"
+                },
+                "familyName": {
+                  "type": "string"
+                },
+                "openCategories": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "example": "סלט"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Dashboard": {
+        "type": "object",
+        "properties": {
+          "upcomingShabbat": {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "shabbat": {
+                    "$ref": "#/components/schemas/Shabbat"
+                  }
+                }
+              },
+              {
+                "$ref": "#/components/schemas/ReportSummary"
+              }
+            ],
+            "nullable": true
+          },
+          "pendingVolunteers": {
+            "type": "integer",
+            "description": "בקשות הצטרפות שממתינות",
+            "example": 1
+          },
+          "activeVolunteers": {
+            "type": "integer",
+            "example": 12
+          },
+          "activeFamilies": {
+            "type": "integer",
+            "example": 3
+          }
+        }
+      },
+      "WeekReport": {
+        "allOf": [
+          {
+            "type": "object",
+            "properties": {
+              "shabbat": {
+                "$ref": "#/components/schemas/Shabbat"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/ReportSummary"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "families": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "familyId": {
+                      "type": "integer"
+                    },
+                    "familyName": {
+                      "type": "string"
+                    },
+                    "peopleCount": {
+                      "type": "integer"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slotId": {
+                            "type": "integer"
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "MAIN",
+                              "SALAD",
+                              "DESSERT",
+                              "OTHER"
+                            ],
+                            "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+                          },
+                          "categoryLabel": {
+                            "type": "string"
+                          },
+                          "portions": {
+                            "type": "integer"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "OPEN",
+                              "TAKEN",
+                              "DELIVERED"
+                            ]
+                          },
+                          "productName": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "volunteer": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "phone": {
+                                "type": "string"
+                              }
+                            },
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "JobResult": {
+        "type": "object",
+        "properties": {
+          "sent": {
+            "type": "integer",
+            "description": "כמה מיילים נשלחו",
+            "example": 4
+          },
+          "shabbatId": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "הנתונים שנשלחו אינם תקינים",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "חלק מהנתונים שנשלחו אינם תקינים",
+                "details": [
+                  {
+                    "field": "email",
+                    "message": "כתובת אימייל אינה תקינה"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "אין Token, ה-Token לא תקין, פג תוקפו, או שהחשבון אינו פעיל",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "examples": {
+              "missing": {
+                "summary": "אין Token",
+                "value": {
+                  "error": {
+                    "code": "TOKEN_MISSING",
+                    "message": "נדרשת התחברות"
+                  }
+                }
+              },
+              "expired": {
+                "summary": "פג תוקף",
+                "value": {
+                  "error": {
+                    "code": "TOKEN_EXPIRED",
+                    "message": "פג תוקף ההתחברות, יש להתחבר מחדש"
+                  }
+                }
+              },
+              "invalid": {
+                "summary": "Token לא תקין",
+                "value": {
+                  "error": {
+                    "code": "TOKEN_INVALID",
+                    "message": "ההתחברות אינה תקינה, יש להתחבר מחדש"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "אין הרשאה לפעולה",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "FORBIDDEN",
+                "message": "אין לך הרשאה לבצע פעולה זו"
+              }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "הרשומה לא נמצאה",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "NOT_FOUND",
+                "message": "הרשומה לא נמצאה"
+              }
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "התנגשות עם המצב הנוכחי (למשל משבצת שנתפסה או אימייל קיים)",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "SLOT_TAKEN",
+                "message": "המשבצת נתפסה, בחרי אחרת"
+              }
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "יותר מדי ניסיונות",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "TOO_MANY_REQUESTS",
+                "message": "יותר מדי ניסיונות. נסי שוב בעוד כמה דקות"
+              }
+            }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "השירות לא הוגדר בשרת",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "error": {
+                "code": "CRON_NOT_CONFIGURED",
+                "message": "המשימות המתוזמנות לא הוגדרו בשרת (חסר CRON_SECRET)"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "כללי"
+        ],
+        "summary": "בדיקת בריאות",
+        "description": "מחזיר 200 כשהשרת ומסד הנתונים פועלים, ו-503 כשמסד הנתונים לא זמין.\n\n🔓 **הרשאה:** פתוח לכולם (ללא Token).",
+        "responses": {
+          "200": {
+            "description": "השרת תקין",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "database": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "time": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                },
+                "example": {
+                  "status": "ok",
+                  "database": "ok",
+                  "time": "2026-10-15T18:00:00.000Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "בקשת הצטרפות",
+        "description": "יוצר חשבון מתנדבת בסטטוס PENDING. אי אפשר להתחבר עד שהמנהלת מאשרת. נשלח מייל למנהלת.\n\n🔓 **הרשאה:** פתוח לכולם (ללא Token).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50
+                  },
+                  "phone": {
+                    "type": "string",
+                    "description": "טלפון ישראלי"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "לפחות 8 תווים, אות אחת וספרה אחת"
+                  },
+                  "address": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "firstName",
+                  "lastName",
+                  "phone",
+                  "email",
+                  "password"
+                ]
+              },
+              "example": {
+                "firstName": "מרים",
+                "lastName": "פרץ",
+                "phone": "054-1112233",
+                "email": "miriam@example.com",
+                "password": "Miriam123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "הבקשה נשלחה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  }
+                },
+                "example": {
+                  "message": "בקשת ההצטרפות נשלחה. החשבון ייפתח לאחר אישור המנהלת",
+                  "user": {
+                    "id": 2,
+                    "firstName": "שרה",
+                    "lastName": "כהן",
+                    "email": "sara@example.com",
+                    "phone": "0521234567",
+                    "address": "רחוב הנביאים 5",
+                    "role": "VOLUNTEER",
+                    "status": "PENDING",
+                    "receiveWeeklyEmail": true,
+                    "createdAt": "2026-10-01T09:00:00.000Z",
+                    "updatedAt": "2026-10-01T09:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "התחברות",
+        "description": "מחזיר JWT ופרטי המשתמשת. רק חשבון פעיל יכול להתחבר: חשבון ממתין מקבל 403 ACCOUNT_PENDING, ומושבת 403 ACCOUNT_INACTIVE. אימייל או סיסמה שגויים → 401 INVALID_CREDENTIALS.\n\nמשתמשות לדוגמה (אחרי הרצת ה-seed בסביבת פיתוח): מנהלת `admin@example.com` / `Admin123!`, מתנדבת `sara@example.com` / `Volunteer123!`.\n\n🔓 **הרשאה:** פתוח לכולם (ללא Token).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              },
+              "example": {
+                "email": "admin@example.com",
+                "password": "Admin123!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "התחברות הצליחה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "JWT"
+                    },
+                    "tokenType": {
+                      "type": "string",
+                      "example": "Bearer"
+                    },
+                    "expiresIn": {
+                      "type": "string",
+                      "description": "תוקף",
+                      "example": "7d"
+                    },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "required": [
+                    "token",
+                    "tokenType",
+                    "expiresIn",
+                    "user"
+                  ]
+                },
+                "example": {
+                  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                  "tokenType": "Bearer",
+                  "expiresIn": "7d",
+                  "user": {
+                    "id": 1,
+                    "firstName": "רחל",
+                    "lastName": "אברהם",
+                    "email": "admin@example.com",
+                    "phone": "0521234567",
+                    "address": "רחוב הנביאים 5",
+                    "role": "ADMIN",
+                    "status": "ACTIVE",
+                    "receiveWeeklyEmail": true,
+                    "createdAt": "2026-10-01T09:00:00.000Z",
+                    "updatedAt": "2026-10-01T09:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "פרטי המשתמשת המחוברת",
+        "description": "שימושי בטעינת האתר: אם ה-Token עדיין תקין – מחזיר את המשתמשת (כולל role), אחרת 401.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "פרטי המשתמשת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "example": {
+                  "id": 2,
+                  "firstName": "שרה",
+                  "lastName": "כהן",
+                  "email": "sara@example.com",
+                  "phone": "0521234567",
+                  "address": "רחוב הנביאים 5",
+                  "role": "VOLUNTEER",
+                  "status": "ACTIVE",
+                  "receiveWeeklyEmail": true,
+                  "createdAt": "2026-10-01T09:00:00.000Z",
+                  "updatedAt": "2026-10-01T09:00:00.000Z"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "שכחתי סיסמה",
+        "description": "שולח מייל עם קישור לאיפוס (תקף לשעה) אל `CLIENT_URL/reset-password?token=...`. התשובה תמיד זהה – כדי שלא יהיה אפשר לגלות אילו כתובות רשומות.\n\n🔓 **הרשאה:** פתוח לכולם (ללא Token).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              },
+              "example": {
+                "email": "sara@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "הבקשה התקבלה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                },
+                "example": {
+                  "message": "אם הכתובת רשומה במערכת, נשלח אליה קישור לאיפוס הסיסמה"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": [
+          "התחברות"
+        ],
+        "summary": "קביעת סיסמה חדשה",
+        "description": "מקבל את ה-token מהקישור שבמייל ואת הסיסמה החדשה. קוד לא תקין או שפג תוקפו → 400 RESET_TOKEN_INVALID.\n\n🔓 **הרשאה:** פתוח לכולם (ללא Token).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "64 תווים מהקישור"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                },
+                "required": [
+                  "token",
+                  "password"
+                ]
+              },
+              "example": {
+                "token": "a3f1c2...64 תווים",
+                "password": "NewPass123"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "הסיסמה עודכנה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                },
+                "example": {
+                  "message": "הסיסמה עודכנה. אפשר להתחבר עם הסיסמה החדשה"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
+    "/api/users/me": {
+      "put": {
+        "tags": [
+          "משתמשות"
+        ],
+        "summary": "עדכון הפרופיל שלי",
+        "description": "שולחים רק את השדות שמשתנים. כדי להסיר את עצמך מרשימת המיילים: `{ \"receiveWeeklyEmail\": false }`. אי אפשר לשנות כאן אימייל, תפקיד או סטטוס.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50
+                  },
+                  "lastName": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "receiveWeeklyEmail": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "phone": "052-9998877",
+                "receiveWeeklyEmail": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "הפרופיל המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                },
+                "example": {
+                  "id": 2,
+                  "firstName": "שרה",
+                  "lastName": "כהן",
+                  "email": "sara@example.com",
+                  "phone": "0529998877",
+                  "address": "רחוב הנביאים 5",
+                  "role": "VOLUNTEER",
+                  "status": "ACTIVE",
+                  "receiveWeeklyEmail": false,
+                  "createdAt": "2026-10-01T09:00:00.000Z",
+                  "updatedAt": "2026-10-01T09:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/users/me/password": {
+      "put": {
+        "tags": [
+          "משתמשות"
+        ],
+        "summary": "שינוי סיסמה",
+        "description": "סיסמה נוכחית שגויה → 400 WRONG_PASSWORD.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentPassword": {
+                    "type": "string"
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                },
+                "required": [
+                  "currentPassword",
+                  "newPassword"
+                ]
+              },
+              "example": {
+                "currentPassword": "Volunteer123!",
+                "newPassword": "MyNewPass456"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "הסיסמה עודכנה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                },
+                "example": {
+                  "message": "הסיסמה עודכנה בהצלחה"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "tags": [
+          "משתמשות"
+        ],
+        "summary": "רשימת מתנדבות",
+        "description": "כולל חיפוש, סינון לפי סטטוס (למשל PENDING לבקשות ממתינות), מיון ועמודים. לכל מתנדבת מוחזר assignmentsCount.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "חיפוש בשם, אימייל או טלפון",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "סינון לפי סטטוס",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "ACTIVE",
+                "INACTIVE"
+              ]
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "description": "שדה למיון",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "firstName",
+                "lastName",
+                "createdAt"
+              ],
+              "default": "createdAt"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "description": "כיוון המיון",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "מספר עמוד",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "כמה רשומות בעמוד",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימה בעמודים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VolunteerListItem"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "סך כל הרשומות",
+                      "example": 42
+                    },
+                    "page": {
+                      "type": "integer",
+                      "description": "העמוד הנוכחי",
+                      "example": 1
+                    },
+                    "pageSize": {
+                      "type": "integer",
+                      "description": "רשומות בעמוד",
+                      "example": 20
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "description": "מספר העמודים",
+                      "example": 3
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize",
+                    "totalPages"
+                  ]
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 2,
+                      "firstName": "שרה",
+                      "lastName": "כהן",
+                      "email": "sara@example.com",
+                      "phone": "0521234567",
+                      "address": "רחוב הנביאים 5",
+                      "role": "VOLUNTEER",
+                      "status": "ACTIVE",
+                      "receiveWeeklyEmail": true,
+                      "createdAt": "2026-10-01T09:00:00.000Z",
+                      "updatedAt": "2026-10-01T09:00:00.000Z",
+                      "notes": null,
+                      "assignmentsCount": 4
+                    }
+                  ],
+                  "total": 1,
+                  "page": 1,
+                  "pageSize": 20,
+                  "totalPages": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "משתמשות"
+        ],
+        "summary": "הוספת מתנדבת ישירות",
+        "description": "יוצר מתנדבת פעילה. אם לא נשלחה סיסמה – נשלח לה מייל עם קישור לבחירת סיסמה (תקף 72 שעות).\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": "string"
+                  },
+                  "lastName": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "description": "רשות"
+                  },
+                  "address": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "receiveWeeklyEmail": {
+                    "type": "boolean",
+                    "default": true
+                  }
+                },
+                "required": [
+                  "firstName",
+                  "lastName",
+                  "phone",
+                  "email"
+                ]
+              },
+              "example": {
+                "firstName": "חנה",
+                "lastName": "מזרחי",
+                "phone": "050-3334455",
+                "email": "hana@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "המתנדבת נוצרה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "$ref": "#/components/schemas/AdminUser"
+                    },
+                    "inviteEmailSent": {
+                      "type": "boolean",
+                      "description": "האם נשלח מייל הזמנה"
+                    }
+                  }
+                },
+                "example": {
+                  "user": {
+                    "id": 7,
+                    "firstName": "חנה",
+                    "lastName": "מזרחי",
+                    "email": "hana@example.com",
+                    "phone": "0521234567",
+                    "address": "רחוב הנביאים 5",
+                    "role": "VOLUNTEER",
+                    "status": "ACTIVE",
+                    "receiveWeeklyEmail": true,
+                    "createdAt": "2026-10-01T09:00:00.000Z",
+                    "updatedAt": "2026-10-01T09:00:00.000Z",
+                    "notes": null
+                  },
+                  "inviteEmailSent": true
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "get": {
+        "tags": [
+          "משתמשות"
+        ],
+        "summary": "פרטי מתנדבת והשיבוצים שלה",
+        "description": "🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המתנדבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "פרטי המתנדבת ו-50 השיבוצים האחרונים שלה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AdminUser"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "assignments": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {}
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "משתמשות"
+        ],
+        "summary": "אישור / השבתה / עריכת מתנדבת",
+        "description": "לאישור בקשת הצטרפות: `{ \"status\": \"ACTIVE\" }` (נשלח למתנדבת מייל). להשבתה: `{ \"status\": \"INACTIVE\" }`. אי אפשר להשבית את המנהלת.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המתנדבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "PENDING",
+                      "ACTIVE",
+                      "INACTIVE"
+                    ]
+                  },
+                  "firstName": {
+                    "type": "string"
+                  },
+                  "lastName": {
+                    "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "receiveWeeklyEmail": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "status": "ACTIVE"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "המתנדבת המעודכנת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/families": {
+      "get": {
+        "tags": [
+          "משפחות"
+        ],
+        "summary": "רשימת משפחות",
+        "description": "🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "חיפוש בשם, כתובת או סוג שמחה",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "פעילות או שסיימו",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "FINISHED"
+              ]
+            }
+          },
+          {
+            "name": "sortBy",
+            "in": "query",
+            "required": false,
+            "description": "שדה למיון",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "familyName",
+                "createdAt",
+                "firstShabbat",
+                "peopleCount"
+              ],
+              "default": "createdAt"
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "required": false,
+            "description": "כיוון המיון",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "default": "desc"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "מספר עמוד",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "description": "כמה רשומות בעמוד",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימה בעמודים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Family"
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "description": "סך כל הרשומות",
+                      "example": 42
+                    },
+                    "page": {
+                      "type": "integer",
+                      "description": "העמוד הנוכחי",
+                      "example": 1
+                    },
+                    "pageSize": {
+                      "type": "integer",
+                      "description": "רשומות בעמוד",
+                      "example": 20
+                    },
+                    "totalPages": {
+                      "type": "integer",
+                      "description": "מספר העמודים",
+                      "example": 3
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total",
+                    "page",
+                    "pageSize",
+                    "totalPages"
+                  ]
+                },
+                "example": {
+                  "items": [
+                    {
+                      "id": 1,
+                      "familyName": "משפחת לוי",
+                      "contactPhone": "0527654321",
+                      "address": "רחוב השלום 12",
+                      "peopleCount": 7,
+                      "simchaType": "בן",
+                      "firstShabbat": "2026-10-17",
+                      "lastShabbat": "2026-11-07",
+                      "dietaryNotes": "ללא גלוטן לאחד הילדים",
+                      "deliveryNotes": "להשאיר ליד הדלת",
+                      "status": "ACTIVE",
+                      "createdAt": "2026-10-10T08:00:00.000Z",
+                      "updatedAt": "2026-10-10T08:00:00.000Z"
+                    }
+                  ],
+                  "total": 1,
+                  "page": 1,
+                  "pageSize": 20,
+                  "totalPages": 1
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "משפחות"
+        ],
+        "summary": "הוספת משפחה",
+        "description": "🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FamilyInput"
+              },
+              "example": {
+                "familyName": "משפחת לוי",
+                "contactPhone": "052-7654321",
+                "address": "רחוב השלום 12",
+                "peopleCount": 7,
+                "simchaType": "בן",
+                "firstShabbat": "2026-10-17",
+                "lastShabbat": "2026-11-07",
+                "dietaryNotes": "ללא גלוטן לאחד הילדים",
+                "deliveryNotes": "להשאיר ליד הדלת"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "המשפחה נוספה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Family"
+                },
+                "example": {
+                  "id": 1,
+                  "familyName": "משפחת לוי",
+                  "contactPhone": "0527654321",
+                  "address": "רחוב השלום 12",
+                  "peopleCount": 7,
+                  "simchaType": "בן",
+                  "firstShabbat": "2026-10-17",
+                  "lastShabbat": "2026-11-07",
+                  "dietaryNotes": "ללא גלוטן לאחד הילדים",
+                  "deliveryNotes": "להשאיר ליד הדלת",
+                  "status": "ACTIVE",
+                  "createdAt": "2026-10-10T08:00:00.000Z",
+                  "updatedAt": "2026-10-10T08:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/families/{id}": {
+      "get": {
+        "tags": [
+          "משפחות"
+        ],
+        "summary": "פרטי משפחה",
+        "description": "כולל את המשבצות של המשפחה בשבתות האחרונות ומי שובצה לכל אחת.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשפחה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "פרטי המשפחה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Family"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {}
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "משפחות"
+        ],
+        "summary": "עריכת משפחה",
+        "description": "שולחים רק את השדות שמשתנים (כל שדות FamilyInput, וגם status).\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשפחה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FamilyInput"
+                  }
+                ],
+                "description": "כל השדות רשות"
+              },
+              "example": {
+                "peopleCount": 8,
+                "lastShabbat": "2026-11-14"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "המשפחה המעודכנת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Family"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "משפחות"
+        ],
+        "summary": "סיום סיוע למשפחה",
+        "description": "לא מוחק את המשפחה – משנה את הסטטוס ל-FINISHED. ההיסטוריה נשמרת.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשפחה",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המשפחה עם status=FINISHED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Family"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/products": {
+      "get": {
+        "tags": [
+          "מוצרים"
+        ],
+        "summary": "רשימת מוצרים",
+        "description": "מתנדבת רואה רק מוצרים פעילים. מנהלת יכולה להוסיף `includeInactive=true`. לחלון ההרשמה למשבצת – לסנן לפי category של המשבצת.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "סינון לפי קטגוריה",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "MAIN",
+                "SALAD",
+                "DESSERT",
+                "OTHER"
+              ],
+              "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "חיפוש לפי שם",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeInactive",
+            "in": "query",
+            "required": false,
+            "description": "מנהלת בלבד: לכלול מוצרים מושבתים",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימת מוצרים",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Product"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "name": "עוף בתנור",
+                    "category": "MAIN",
+                    "categoryLabel": "תבשיל",
+                    "description": "עוף בתנור עם תפוחי אדמה",
+                    "isActive": true,
+                    "createdAt": "2026-10-01T09:00:00.000Z",
+                    "updatedAt": "2026-10-01T09:00:00.000Z"
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "מוצרים"
+        ],
+        "summary": "הוספת מוצר",
+        "description": "שם המוצר ייחודי בתוך הקטגוריה (409 PRODUCT_EXISTS).\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProductInput"
+              },
+              "example": {
+                "name": "קציצות ברוטב",
+                "category": "MAIN",
+                "description": "קציצות בקר ברוטב עגבניות"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "המוצר נוסף",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/products/{id}": {
+      "put": {
+        "tags": [
+          "מוצרים"
+        ],
+        "summary": "עריכת מוצר",
+        "description": "שולחים רק את השדות שמשתנים. אפשר גם להחזיר מוצר מושבת: `{ \"isActive\": true }`.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המוצר",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "MAIN",
+                      "SALAD",
+                      "DESSERT",
+                      "OTHER"
+                    ],
+                    "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+                  },
+                  "description": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "description": "עוף בתנור עם תפוחי אדמה ובצל"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "המוצר המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "מוצרים"
+        ],
+        "summary": "השבתת מוצר",
+        "description": "לא מוחק – משנה isActive ל-false. המוצר לא יוצג לבחירה, אבל נשאר בשיבוצים קודמים.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המוצר",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "המוצר עם isActive=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/shabbatot/current": {
+      "get": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "לוח השבוע (דף הבית של המתנדבת)",
+        "description": "השבת המפורסמת הקרובה וכל המשבצות שלה. **פרטי המשפחה הפרטיים לא נשלחים** – רק כינוי (\"משפחה א'\"), מספר נפשות, סוג שמחה והערות אוכל.\n\nאם אין כרגע שבת מפורסמת – מוחזר `{ \"shabbat\": null, \"slotCounts\": null, \"families\": [] }`.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "description": "הצגת משבצות מקטגוריה אחת בלבד",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "MAIN",
+                "SALAD",
+                "DESSERT",
+                "OTHER"
+              ],
+              "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+            }
+          },
+          {
+            "name": "onlyOpen",
+            "in": "query",
+            "required": false,
+            "description": "הצגת משבצות פנויות בלבד",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "לוח השבוע",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentBoard"
+                },
+                "example": {
+                  "shabbat": {
+                    "id": 1,
+                    "shabbatDate": "2026-10-24",
+                    "parasha": "נח",
+                    "deliveryDeadline": "2026-10-22T18:00:00.000Z",
+                    "cancelDeadline": "2026-10-21T18:00:00.000Z",
+                    "collectionPoint": "רחוב הרב קוק 12, בית השם",
+                    "message": "שבוע טוב לכולן! השבוע שלוש משפחות שמחות מחכות לעזרתנו",
+                    "status": "PUBLISHED",
+                    "isOpenForRegistration": true
+                  },
+                  "slotCounts": {
+                    "total": 3,
+                    "open": 2,
+                    "taken": 1,
+                    "delivered": 0
+                  },
+                  "families": [
+                    {
+                      "label": "משפחה א'",
+                      "peopleCount": 7,
+                      "simchaType": "בן",
+                      "dietaryNotes": "ללא גלוטן לאחד הילדים",
+                      "slots": [
+                        {
+                          "id": 1,
+                          "category": "MAIN",
+                          "categoryLabel": "תבשיל",
+                          "portions": 7,
+                          "status": "TAKEN",
+                          "productName": "עוף בתנור",
+                          "isMine": true
+                        },
+                        {
+                          "id": 2,
+                          "category": "SALAD",
+                          "categoryLabel": "סלט",
+                          "portions": 7,
+                          "status": "OPEN",
+                          "productName": null,
+                          "isMine": false
+                        },
+                        {
+                          "id": 3,
+                          "category": "DESSERT",
+                          "categoryLabel": "קינוח",
+                          "portions": 7,
+                          "status": "OPEN",
+                          "productName": null,
+                          "isMine": false
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/shabbatot": {
+      "get": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "רשימת כל השבתות (כולל היסטוריה)",
+        "description": "🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "סינון לפי סטטוס",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "PUBLISHED",
+                "CLOSED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "שבתות, מהחדשה לישנה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShabbatListItem"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "יצירת שבת (טיוטה)",
+        "description": "התאריך חייב להיות יום שבת ולא בעבר (400 NOT_SATURDAY / DATE_IN_PAST). שבת בתאריך קיים → 409 SHABBAT_EXISTS. מועד המסירה מחושב אוטומטית. בלי collectionPoint – נלקחת ברירת המחדל מהגדרות השרת.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shabbatDate": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2026-10-24"
+                  },
+                  "parasha": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50
+                  },
+                  "collectionPoint": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "nullable": true
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 2000,
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "shabbatDate",
+                  "parasha"
+                ]
+              },
+              "example": {
+                "shabbatDate": "2026-10-24",
+                "parasha": "נח",
+                "message": "שבוע טוב לכולן!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "השבת נוצרה בסטטוס DRAFT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shabbat"
+                },
+                "example": {
+                  "id": 1,
+                  "shabbatDate": "2026-10-24",
+                  "parasha": "נח",
+                  "deliveryDeadline": "2026-10-22T18:00:00.000Z",
+                  "cancelDeadline": "2026-10-21T18:00:00.000Z",
+                  "collectionPoint": "רחוב הרב קוק 12, בית השם",
+                  "message": "שבוע טוב לכולן! השבוע שלוש משפחות שמחות מחכות לעזרתנו",
+                  "status": "DRAFT",
+                  "isOpenForRegistration": false,
+                  "publishedAt": null,
+                  "createdAt": "2026-10-18T18:00:00.000Z",
+                  "updatedAt": "2026-10-18T19:00:00.000Z"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/shabbatot/{id}": {
+      "get": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "הלוח המלא של שבת (מנהלת)",
+        "description": "כל המשפחות (עם שמות), המשבצות, מי שובצה ומה היא מביאה. אחרי פרסום – גם distributionListMessage להעתקה.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "הלוח המלא",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBoard"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "עריכת שבת",
+        "description": "אפשר לערוך פרשה, דברי פתיחה ונקודת איסוף כל עוד השבת לא נסגרה. את התאריך אפשר לשנות רק בטיוטה.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shabbatDate": {
+                    "type": "string",
+                    "format": "date",
+                    "example": "2026-10-24"
+                  },
+                  "parasha": {
+                    "type": "string"
+                  },
+                  "collectionPoint": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              },
+              "example": {
+                "message": "השבוע חסרים בעיקר קינוחים!"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "השבת המעודכנת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shabbat"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "מחיקת שבת (רק טיוטה)",
+        "description": "מוחק את השבת ואת המשבצות שלה. שבת שפורסמה → 409 SHABBAT_NOT_DRAFT.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "נמחקה"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/shabbatot/{id}/generate-slots": {
+      "post": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "יצירת משבצות אוטומטית",
+        "description": "יוצר משבצת לכל משפחה פעילה שהשבת בתקופת הסיוע שלה (firstShabbat–lastShabbat), לכל קטגוריה שנבחרה. ברירת מחדל: תבשיל, סלט, קינוח. כמות המנות = מספר הנפשות. משבצות שכבר קיימות לא נוצרות שוב, כך שאפשר להפעיל שוב בבטחה. גוף הבקשה רשות.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "categories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "MAIN",
+                        "SALAD",
+                        "DESSERT",
+                        "OTHER"
+                      ],
+                      "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+                    }
+                  }
+                }
+              },
+              "example": {
+                "categories": [
+                  "MAIN",
+                  "SALAD",
+                  "DESSERT"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "סיכום היצירה והלוח המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "familiesCount": {
+                      "type": "integer",
+                      "example": 3
+                    },
+                    "created": {
+                      "type": "integer",
+                      "example": 9
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "example": 0
+                    },
+                    "board": {
+                      "$ref": "#/components/schemas/AdminBoard"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/shabbatot/{id}/publish": {
+      "patch": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "פרסום שבת",
+        "description": "פותח את השבת להרשמה, שולח מייל לכל המתנדבות הפעילות שבחרו לקבל, ומחזיר הודעה מוכנה לרשימת התפוצה. שגיאות 409: ALREADY_PUBLISHED, NO_SLOTS, DEADLINE_PASSED.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "השבת פורסמה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "shabbat": {
+                      "$ref": "#/components/schemas/Shabbat"
+                    },
+                    "distributionListMessage": {
+                      "type": "string",
+                      "description": "הודעה להעתקה לרשימת התפוצה"
+                    },
+                    "emailsQueued": {
+                      "type": "integer",
+                      "description": "לכמה מתנדבות נשלח מייל",
+                      "example": 12
+                    }
+                  }
+                },
+                "example": {
+                  "shabbat": {
+                    "id": 1,
+                    "shabbatDate": "2026-10-24",
+                    "parasha": "נח",
+                    "deliveryDeadline": "2026-10-22T18:00:00.000Z",
+                    "cancelDeadline": "2026-10-21T18:00:00.000Z",
+                    "collectionPoint": "רחוב הרב קוק 12, בית השם",
+                    "message": "שבוע טוב לכולן! השבוע שלוש משפחות שמחות מחכות לעזרתנו",
+                    "status": "PUBLISHED",
+                    "isOpenForRegistration": true,
+                    "publishedAt": "2026-10-18T19:00:00.000Z",
+                    "createdAt": "2026-10-18T18:00:00.000Z",
+                    "updatedAt": "2026-10-18T19:00:00.000Z"
+                  },
+                  "distributionListMessage": "🍲 עזר ליולדת – שבת פרשת נח (24.10.2026)\n\nהשבוע 3 משפחות שמחות מחכות לארוחות שבת:\n• משפחה א' – בן, 7 נפשות\n...\nלהרשמה ולבחירת מאכל: https://ezer.example.com",
+                  "emailsQueued": 12
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/shabbatot/{id}/close": {
+      "patch": {
+        "tags": [
+          "שבתות"
+        ],
+        "summary": "סגירת שבת ידנית",
+        "description": "שבת נסגרת גם אוטומטית ביום חמישי ב-21:00. אחרי סגירה מתנדבות לא יכולות להירשם או לבטל.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "השבת נסגרה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Shabbat"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/slots": {
+      "post": {
+        "tags": [
+          "משבצות"
+        ],
+        "summary": "הוספת משבצת ידנית",
+        "description": "למשל משבצת \"סלט\" נוספת למשפחה גדולה. בלי portions – נלקח מספר הנפשות של המשפחה.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shabbatId": {
+                    "type": "integer"
+                  },
+                  "familyId": {
+                    "type": "integer"
+                  },
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "MAIN",
+                      "SALAD",
+                      "DESSERT",
+                      "OTHER"
+                    ],
+                    "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+                  },
+                  "portions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  }
+                },
+                "required": [
+                  "shabbatId",
+                  "familyId",
+                  "category"
+                ]
+              },
+              "example": {
+                "shabbatId": 1,
+                "familyId": 1,
+                "category": "SALAD",
+                "portions": 7
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "המשבצת נוספה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Slot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/slots/{id}": {
+      "put": {
+        "tags": [
+          "משבצות"
+        ],
+        "summary": "עריכת משבצת",
+        "description": "רק משבצת פנויה (409 SLOT_NOT_OPEN) בשבת שלא נסגרה.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשבצת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "MAIN",
+                      "SALAD",
+                      "DESSERT",
+                      "OTHER"
+                    ],
+                    "description": "MAIN=תבשיל, SALAD=סלט, DESSERT=קינוח, OTHER=אחר"
+                  },
+                  "portions": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  }
+                }
+              },
+              "example": {
+                "portions": 10
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "המשבצת המעודכנת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Slot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "משבצות"
+        ],
+        "summary": "מחיקת משבצת",
+        "description": "רק משבצת פנויה בשבת שלא נסגרה.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה המשבצת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "נמחקה"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/assignments": {
+      "post": {
+        "tags": [
+          "שיבוצים"
+        ],
+        "summary": "הרשמה למשבצת (\"אני מביאה\")",
+        "description": "המשתמשת נקבעת לפי ה-Token. המוצר חייב להיות פעיל ומאותה קטגוריה של המשבצת. אם המשבצת כבר נתפסה (גם אם שתי מתנדבות לחצו באותו רגע) → **409 SLOT_TAKEN**. שבת סגורה → 409 SHABBAT_CLOSED. אחרי הצלחה נשלח מייל אישור.\n\n**מנהלת** יכולה לשלוח גם `userId` כדי לשבץ מתנדבת ידנית (מתנדבת ששולחת userId של אחרת → 403).\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slotId": {
+                    "type": "integer",
+                    "description": "מזהה המשבצת מלוח השבוע"
+                  },
+                  "productId": {
+                    "type": "integer",
+                    "description": "מזהה המוצר שנבחר"
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "nullable": true
+                  },
+                  "userId": {
+                    "type": "integer",
+                    "description": "מנהלת בלבד – שיבוץ ידני"
+                  }
+                },
+                "required": [
+                  "slotId",
+                  "productId"
+                ]
+              },
+              "example": {
+                "slotId": 2,
+                "productId": 4,
+                "note": "אביא בקופסה חד פעמית"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "השיבוץ נוצר",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "שיבוצים"
+        ],
+        "summary": "כל השיבוצים (מעקב מנהלת)",
+        "description": "🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "shabbatId",
+            "in": "query",
+            "required": false,
+            "description": "שיבוצים של שבת מסוימת",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "description": "שיבוצים של מתנדבת מסוימת",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "סינון לפי סטטוס",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "DELIVERED",
+                "CANCELLED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "רשימת שיבוצים, מהחדש לישן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminAssignment"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/assignments/mine": {
+      "get": {
+        "tags": [
+          "שיבוצים"
+        ],
+        "summary": "השיבוצים שלי",
+        "description": "רק השיבוצים של המשתמשת המחוברת. לכל שיבוץ מוחזר `canCancel` – האם להציג כפתור ביטול.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "סינון לפי סטטוס",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "DELIVERED",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "upcoming",
+            "in": "query",
+            "required": false,
+            "description": "רק שבתות שעוד לא עברו",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "השיבוצים שלי",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Assignment"
+                  }
+                },
+                "example": [
+                  {
+                    "id": 3,
+                    "status": "ACTIVE",
+                    "note": null,
+                    "createdAt": "2026-10-19T10:00:00.000Z",
+                    "cancelledAt": null,
+                    "deliveredAt": null,
+                    "canCancel": true,
+                    "product": {
+                      "id": 1,
+                      "name": "עוף בתנור",
+                      "category": "MAIN"
+                    },
+                    "slot": {
+                      "id": 1,
+                      "category": "MAIN",
+                      "categoryLabel": "תבשיל",
+                      "portions": 7
+                    },
+                    "family": {
+                      "label": "משפחה א'",
+                      "peopleCount": 7,
+                      "simchaType": "בן",
+                      "dietaryNotes": "ללא גלוטן לאחד הילדים"
+                    },
+                    "shabbat": {
+                      "id": 1,
+                      "shabbatDate": "2026-10-24",
+                      "parasha": "נח",
+                      "deliveryDeadline": "2026-10-22T18:00:00.000Z",
+                      "cancelDeadline": "2026-10-21T18:00:00.000Z",
+                      "collectionPoint": "רחוב הרב קוק 12, בית השם",
+                      "message": "שבוע טוב לכולן! השבוע שלוש משפחות שמחות מחכות לעזרתנו",
+                      "status": "PUBLISHED",
+                      "isOpenForRegistration": true
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/api/assignments/{id}": {
+      "delete": {
+        "tags": [
+          "שיבוצים"
+        ],
+        "summary": "ביטול שיבוץ",
+        "description": "המשבצת חוזרת להיות פנויה, והשיבוץ נשמר בסטטוס CANCELLED. מתנדבת – רק שיבוץ שלה (אחרת 403 FORBIDDEN) ועד יום רביעי 21:00 (אחרת 403 CANCEL_DEADLINE_PASSED). מנהלת – כל שיבוץ בכל זמן. שיבוץ שכבר בוטל או נמסר → 409 ASSIGNMENT_NOT_ACTIVE.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השיבוץ",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "השיבוץ אחרי הביטול",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/assignments/{id}/delivered": {
+      "patch": {
+        "tags": [
+          "שיבוצים"
+        ],
+        "summary": "סימון \"נמסר\" / \"התקבל\"",
+        "description": "מתנדבת – רק שיבוץ שלה. מנהלת – כל שיבוץ. גם המשבצת מסומנת DELIVERED.\n\n👤 **הרשאה:** כל משתמשת מחוברת (Bearer Token).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השיבוץ",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "השיבוץ המעודכן",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignmentResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/reports/dashboard": {
+      "get": {
+        "tags": [
+          "דוחות"
+        ],
+        "summary": "נתוני לוח הבקרה",
+        "description": "השבת הקרובה (פתוחות / תפוסות / נמסרו, ואילו משפחות עדיין חסר להן), ומספרי מתנדבות ומשפחות.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "נתוני לוח הבקרה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dashboard"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/reports/week/{id}": {
+      "get": {
+        "tags": [
+          "דוחות"
+        ],
+        "summary": "סיכום שבת",
+        "description": "🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "סיכום השבת",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/reports/week/{id}/export": {
+      "get": {
+        "tags": [
+          "דוחות"
+        ],
+        "summary": "הורדת סיכום שבת כקובץ CSV",
+        "description": "קובץ שנפתח באקסל עם עברית תקינה. שם הקובץ בכותרת Content-Disposition.\n\n🛡️ **הרשאה:** מנהלת בלבד (Bearer Token של מנהלת). מתנדבת תקבל 403.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "מזהה השבת",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "example": 1
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "קובץ CSV",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/jobs/thursday-reminders": {
+      "post": {
+        "tags": [
+          "משימות מתוזמנות"
+        ],
+        "summary": "תזכורת יום חמישי למתנדבות",
+        "description": "להפעלה כל יום חמישי בבוקר. שולח לכל מתנדבת עם שיבוץ פעיל לשבת הקרובה מייל עם כל הפרטים. נשלח פעם אחת בלבד לכל שבת.\n\n🔑 **הרשאה:** קוד סודי בכותרת `X-Cron-Secret` (מיועד ל-cron-job.org, לא ל-React).",
+        "security": [
+          {
+            "cronSecret": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "תוצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/jobs/open-slots-report": {
+      "post": {
+        "tags": [
+          "משימות מתוזמנות"
+        ],
+        "summary": "דוח משבצות פתוחות למנהלת",
+        "description": "להפעלה כל יום רביעי. שולח למנהלת את רשימת המשבצות שעדיין פנויות בשבת המפורסמת הקרובה. נשלח פעם אחת בלבד לכל שבת.\n\n🔑 **הרשאה:** קוד סודי בכותרת `X-Cron-Secret` (מיועד ל-cron-job.org, לא ל-React).",
+        "security": [
+          {
+            "cronSecret": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "תוצאה",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    }
+  }
+}
