@@ -80,6 +80,13 @@ npm run dev                    # http://localhost:4000
 | מתנדבת | rivka@example.com | Volunteer123! |
 | ממתינה לאישור | leah@example.com | Volunteer123! |
 
+**כניסה לאתר בענן:**
+
+| תפקיד | אימייל | סיסמה |
+|---|---|---|
+| מנהלת | manager@example.com | Admin123! |
+| מתנדבת | sara@example.com | Volunteer123! |
+
 ## פקודות
 
 | פקודה | מה היא עושה |
