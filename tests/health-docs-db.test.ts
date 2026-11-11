@@ -15,6 +15,7 @@ const IMPLEMENTED_ROUTES = [
   'PUT /api/users/me/password',
   'GET /api/users',
   'POST /api/users',
+  'POST /api/users/bulk',
   'GET /api/users/{id}',
   'PATCH /api/users/{id}',
   'GET /api/families',
@@ -48,6 +49,11 @@ const IMPLEMENTED_ROUTES = [
   'GET /api/reports/week/{id}/export',
   'POST /api/jobs/thursday-reminders',
   'POST /api/jobs/open-slots-report',
+  'GET /api/thanks',
+  'POST /api/thanks',
+  'GET /api/thanks/admin',
+  'PATCH /api/thanks/{id}',
+  'DELETE /api/thanks/{id}',
 ];
 
 describe('בריאות השרת', () => {

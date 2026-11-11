@@ -51,6 +51,12 @@ enum AssignmentStatus {
   CANCELLED
 }
 
+enum ThankYouStatus {
+  PENDING
+  APPROVED
+  HIDDEN
+}
+
 /// נשות הקהילה – מנהלת ומתנדבות
 model User {
   id                 Int        @id @default(autoincrement())
@@ -174,4 +180,19 @@ model Assignment {
   @@index([slotId])
   @@index([userId, status])
   @@map("assignments")
+}
+
+/// "משפחות מוסרות תודה": הודעה שמשפחה כתבה בטופס הפתוח בדף הבית.
+/// מוצגת לכולם רק אחרי שהמנהלת אישרה אותה (APPROVED)
+model ThankYou {
+  id         Int            @id @default(autoincrement())
+  familyName String         @db.VarChar(100)
+  message    String         @db.VarChar(1000)
+  status     ThankYouStatus @default(PENDING)
+  reviewedAt DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@map("thank_yous")
 }

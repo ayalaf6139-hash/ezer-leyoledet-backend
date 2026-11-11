@@ -219,6 +219,7 @@ export const openApiDocument = {
     { name: 'שיבוצים', description: 'הרשמה למשבצות, ביטול וסימון "נמסר"' },
     { name: 'דוחות', description: 'לוח בקרה וסיכומים (מנהלת בלבד)' },
     { name: 'משימות מתוזמנות', description: 'תזכורות שמופעלות על ידי cron-job.org' },
+    { name: 'תודות', description: 'משפחות מוסרות תודה – טופס פתוח ואישור מנהלת' },
   ],
   components: {
     securitySchemes: {
@@ -729,6 +730,7 @@ export const openApiDocument = {
         query: [
           q('q', { type: 'string' }, 'חיפוש בשם, אימייל או טלפון'),
           q('status', enumOf(['PENDING', 'ACTIVE', 'INACTIVE']), 'סינון לפי סטטוס'),
+          q('role', { ...enumOf(['VOLUNTEER', 'ADMIN']), default: 'VOLUNTEER' }, 'מתנדבות (ברירת מחדל) או מנהלות'),
           q('sortBy', { ...enumOf(['firstName', 'lastName', 'createdAt']), default: 'createdAt' }, 'שדה למיון'),
           q('order', { ...enumOf(['asc', 'desc']), default: 'desc' }, 'כיוון המיון'),
           ...pageParams,
@@ -769,6 +771,35 @@ export const openApiDocument = {
         errors: [409],
       }),
     },
+    '/api/users/bulk': {
+      post: op({
+        tag: 'משתמשות',
+        summary: 'הוספת כמה מתנדבות בבת אחת',
+        description:
+          'עד 100 מתנדבות בבקשה אחת. כל שורה נבדקת בנפרד: שורה שגויה, אימייל שכבר רשום או אימייל שמופיע פעמיים לא עוצרים את השאר, ומוחזרים ב-`failed` עם מספר השורה (מתחיל ב-1) והסיבה. כל מתנדבת שנוצרה מקבלת מייל לבחירת סיסמה.',
+        auth: 'admin',
+        body: {
+          schema: obj({ volunteers: arrayOf(obj({ firstName: str(), lastName: str(), phone: str(), email: { type: 'string', format: 'email' } }, ['firstName', 'lastName', 'phone', 'email'])) }, ['volunteers']),
+          example: {
+            volunteers: [
+              { firstName: 'חנה', lastName: 'מזרחי', phone: '050-3334455', email: 'hana@example.com' },
+              { firstName: 'רחל', lastName: 'לוי', phone: '052-1112233', email: 'rachel@example.com' },
+            ],
+          },
+        },
+        success: {
+          status: 201,
+          description: 'סיכום ההוספה',
+          schema: obj({
+            createdCount: int(),
+            failedCount: int(),
+            created: arrayOf(obj({ user: ref('AdminUser'), inviteEmailSent: bool() })),
+            failed: arrayOf(obj({ row: int('מספר השורה ברשימה'), email: nullable(str()), reason: str() })),
+          }),
+          example: { createdCount: 1, failedCount: 1, created: [], failed: [{ row: 2, email: 'rachel@example.com', reason: 'כתובת האימייל כבר רשומה במערכת' }] },
+        },
+      }),
+    },
     '/api/users/{id}': {
       get: op({
         tag: 'משתמשות',
@@ -784,12 +815,14 @@ export const openApiDocument = {
       patch: op({
         tag: 'משתמשות',
         summary: 'אישור / השבתה / עריכת מתנדבת',
-        description: 'לאישור בקשת הצטרפות: `{ "status": "ACTIVE" }` (נשלח למתנדבת מייל). להשבתה: `{ "status": "INACTIVE" }`. אי אפשר להשבית את המנהלת.',
+        description:
+          'לאישור בקשת הצטרפות: `{ "status": "ACTIVE" }` (נשלח למתנדבת מייל). להשבתה: `{ "status": "INACTIVE" }`. אי אפשר להשבית מנהלת.\n\nמינוי למנהלת: `{ "role": "ADMIN" }` (רק לחשבון פעיל). הסרת הרשאת ניהול: `{ "role": "VOLUNTEER" }`. אי אפשר לשנות את ההרשאה של עצמך, ואי אפשר להסיר את המנהלת הפעילה האחרונה.',
         auth: 'admin',
         path: [idPath('מזהה המתנדבת')],
         body: {
           schema: obj({
             status: enumOf(['PENDING', 'ACTIVE', 'INACTIVE']),
+            role: enumOf(['VOLUNTEER', 'ADMIN']),
             firstName: str(),
             lastName: str(),
             phone: str(),
@@ -1260,6 +1293,58 @@ export const openApiDocument = {
         auth: 'cron',
         success: { description: 'תוצאה', schema: ref('JobResult') },
         errors: [503],
+      }),
+    },
+
+    // ---------- משפחות מוסרות תודה ----------
+    '/api/thanks': {
+      get: op({
+        tag: 'תודות',
+        summary: 'התודות שאושרו (לדף הבית)',
+        description: '50 התודות האחרונות שהמנהלת אישרה, החדשות ראשונות.',
+        auth: 'public',
+        success: { description: 'רשימת תודות', schema: arrayOf(obj({ id: int(), familyName: str(), message: str(), createdAt: dateTime() })), example: [{ id: 3, familyName: 'משפחת כהן', message: 'תודה ענקית לכל המבשלות!', createdAt: '2026-11-11T18:00:00.000Z' }] },
+      }),
+      post: op({
+        tag: 'תודות',
+        summary: 'כתיבת תודה (טופס פתוח)',
+        description: 'בלי התחברות. התודה נשמרת כממתינה (PENDING) ומוצגת רק אחרי אישור המנהלת. למנהלות נשלח מייל. מוגבל ל-5 הודעות בשעה מאותה כתובת.',
+        auth: 'public',
+        body: {
+          schema: obj({ familyName: { type: 'string', minLength: 2, maxLength: 100 }, message: { type: 'string', minLength: 5, maxLength: 1000 } }, ['familyName', 'message']),
+          example: { familyName: 'משפחת כהן', message: 'תודה ענקית לכל המבשלות!' },
+        },
+        success: { status: 201, description: 'התודה התקבלה', schema: ref('Message'), example: { message: 'תודה רבה! הדברים יוצגו באתר לאחר אישור' } },
+        errors: [429],
+      }),
+    },
+    '/api/thanks/admin': {
+      get: op({
+        tag: 'תודות',
+        summary: 'כל התודות (לאישור)',
+        auth: 'admin',
+        query: [q('status', enumOf(['PENDING', 'APPROVED', 'HIDDEN']), 'סינון לפי סטטוס'), ...pageParams],
+        success: { description: 'רשימה בעמודים', schema: obj({ items: arrayOf(obj({})), total: int(), page: int(), pageSize: int(), totalPages: int() }) },
+      }),
+    },
+    '/api/thanks/{id}': {
+      patch: op({
+        tag: 'תודות',
+        summary: 'אישור / הסתרה של תודה',
+        description: 'אישור: `{ "status": "APPROVED" }`. הסתרה: `{ "status": "HIDDEN" }`. החזרה להמתנה: `{ "status": "PENDING" }`.',
+        auth: 'admin',
+        path: [idPath('מזהה התודה')],
+        body: { schema: obj({ status: enumOf(['PENDING', 'APPROVED', 'HIDDEN']) }, ['status']), example: { status: 'APPROVED' } },
+        success: { description: 'התודה המעודכנת', schema: obj({}) },
+        errors: [404],
+      }),
+      delete: op({
+        tag: 'תודות',
+        summary: 'מחיקת תודה',
+        auth: 'admin',
+        path: [idPath('מזהה התודה')],
+        success: { status: 204, description: 'נמחקה' },
+        errors: [404],
       }),
     },
   },

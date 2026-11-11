@@ -13,5 +13,6 @@ usersRoutes.put('/me/password', users.changePassword);
 // מנהלת בלבד
 usersRoutes.get('/', requireAdmin, users.list);
 usersRoutes.post('/', requireAdmin, users.create);
+usersRoutes.post('/bulk', requireAdmin, users.bulkCreate);
 usersRoutes.get('/:id', requireAdmin, users.getById);
 usersRoutes.patch('/:id', requireAdmin, users.update);

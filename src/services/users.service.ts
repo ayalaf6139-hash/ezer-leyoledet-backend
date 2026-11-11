@@ -2,14 +2,14 @@ import crypto from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import type { z } from 'zod';
 import { prisma } from '../db/prisma';
-import { badRequest, conflict, notFound } from '../utils/httpError';
+import { badRequest, conflict, HttpError, notFound } from '../utils/httpError';
 import { hashPassword, verifyPassword } from '../utils/security';
 import { paginate, toPaginated } from '../utils/pagination';
 import { formatDateOnly } from '../utils/dates';
 import { CATEGORY_LABELS } from '../utils/labels';
+import { createUserSchema } from '../validation/users.schemas';
 import type {
   changePasswordSchema,
-  createUserSchema,
   listUsersQuery,
   updateMeSchema,
   updateUserSchema,
@@ -39,7 +39,7 @@ export async function changePassword(userId: number, data: z.infer<typeof change
 
 export async function listVolunteers(query: z.infer<typeof listUsersQuery>) {
   const where: Prisma.UserWhereInput = {
-    role: 'VOLUNTEER',
+    role: query.role,
     ...(query.status ? { status: query.status } : {}),
     ...(query.q
       ? {
@@ -87,6 +87,68 @@ export async function createVolunteer(data: z.infer<typeof createUserSchema>) {
   return { user, inviteEmailSent };
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  firstName: 'שם פרטי',
+  lastName: 'שם משפחה',
+  phone: 'טלפון',
+  email: 'אימייל',
+  address: 'כתובת',
+  notes: 'הערות',
+};
+
+export interface BulkFailure {
+  row: number;
+  email: string | null;
+  reason: string;
+}
+
+/**
+ * הוספת כמה מתנדבות בבת אחת. כל אחת מקבלת מייל לבחירת סיסמה.
+ * שורה שגויה או אימייל שכבר רשום לא עוצרים את השאר – הם מוחזרים ברשימת failed.
+ * row = מספר השורה ברשימה שנשלחה (מתחיל ב-1)
+ */
+export async function bulkCreateVolunteers(rows: unknown[]) {
+  const created: Awaited<ReturnType<typeof createVolunteer>>[] = [];
+  const failed: BulkFailure[] = [];
+  const seenEmails = new Set<string>();
+
+  for (const [index, raw] of rows.entries()) {
+    const row = index + 1;
+    const rawEmail =
+      raw && typeof raw === 'object' && typeof (raw as { email?: unknown }).email === 'string'
+        ? (raw as { email: string }).email.trim().toLowerCase()
+        : null;
+
+    const parsed = createUserSchema.safeParse(raw);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const key = issue.path.join('.');
+      const field = FIELD_LABELS[key] ?? key;
+      failed.push({ row, email: rawEmail, reason: field ? `${field}: ${issue.message}` : issue.message });
+      continue;
+    }
+
+    const data = { ...parsed.data, password: undefined };
+    if (seenEmails.has(data.email)) {
+      failed.push({ row, email: data.email, reason: 'האימייל מופיע פעמיים ברשימה' });
+      continue;
+    }
+    seenEmails.add(data.email);
+
+    try {
+      created.push(await createVolunteer(data));
+    } catch (err) {
+      if (err instanceof HttpError) {
+        failed.push({ row, email: data.email, reason: err.message });
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  return { createdCount: created.length, failedCount: failed.length, created, failed };
+}
+
 export async function getVolunteer(id: number) {
   const user = await prisma.user.findUnique({
     where: { id },
@@ -129,11 +191,30 @@ export async function getVolunteer(id: number) {
   };
 }
 
-export async function updateUser(id: number, data: z.infer<typeof updateUserSchema>) {
+export async function updateUser(actorId: number, id: number, data: z.infer<typeof updateUserSchema>) {
   const target = await prisma.user.findUnique({ where: { id } });
   if (!target) throw notFound('USER_NOT_FOUND', 'המתנדבת לא נמצאה');
-  if (target.role === 'ADMIN' && data.status && data.status !== 'ACTIVE') {
-    throw badRequest('CANNOT_CHANGE_ADMIN_STATUS', 'לא ניתן להשבית את חשבון המנהלת');
+
+  const newRole = data.role ?? target.role;
+  const newStatus = data.status ?? target.status;
+
+  if (data.role && data.role !== target.role) {
+    if (id === actorId) {
+      throw badRequest('CANNOT_CHANGE_OWN_ROLE', 'לא ניתן לשנות את ההרשאה של עצמך. מנהלת אחרת צריכה לעשות זאת');
+    }
+    if (data.role === 'ADMIN' && newStatus !== 'ACTIVE') {
+      throw badRequest('ADMIN_MUST_BE_ACTIVE', 'יש לאשר את החשבון לפני מינוי למנהלת');
+    }
+    if (data.role === 'VOLUNTEER') {
+      const otherAdmins = await prisma.user.count({ where: { role: 'ADMIN', status: 'ACTIVE', id: { not: id } } });
+      if (otherAdmins === 0) {
+        throw badRequest('LAST_ADMIN', 'זו המנהלת היחידה. יש למנות מנהלת נוספת לפני הסרת ההרשאה');
+      }
+    }
+  }
+
+  if (newRole === 'ADMIN' && data.status && data.status !== 'ACTIVE') {
+    throw badRequest('CANNOT_CHANGE_ADMIN_STATUS', 'לא ניתן להשבית חשבון מנהלת. יש קודם להסיר את הרשאת הניהול');
   }
 
   const user = await prisma.user.update({ where: { id }, data, select: adminUserSelect });

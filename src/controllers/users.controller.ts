@@ -3,6 +3,7 @@ import * as usersService from '../services/users.service';
 import { currentUser } from '../middleware/auth';
 import { idParam } from '../validation/common';
 import {
+  bulkCreateUsersSchema,
   changePasswordSchema,
   createUserSchema,
   listUsersQuery,
@@ -27,10 +28,15 @@ export async function create(req: Request, res: Response) {
   res.status(201).json(await usersService.createVolunteer(createUserSchema.parse(req.body)));
 }
 
+export async function bulkCreate(req: Request, res: Response) {
+  const { volunteers } = bulkCreateUsersSchema.parse(req.body);
+  res.status(201).json(await usersService.bulkCreateVolunteers(volunteers));
+}
+
 export async function getById(req: Request, res: Response) {
   res.json(await usersService.getVolunteer(idParam.parse(req.params).id));
 }
 
 export async function update(req: Request, res: Response) {
-  res.json(await usersService.updateUser(idParam.parse(req.params).id, updateUserSchema.parse(req.body)));
+  res.json(await usersService.updateUser(currentUser(req).id, idParam.parse(req.params).id, updateUserSchema.parse(req.body)));
 }

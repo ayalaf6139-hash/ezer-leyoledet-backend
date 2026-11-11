@@ -19,3 +19,6 @@ export const loginLimiter = limiter(15, 10);
 
 /** הגבלה על הרשמה, שכחתי סיסמה ואיפוס – מונעת הצפת מיילים */
 export const sensitiveLimiter = limiter(15, 20);
+
+/** טופס התודות הפתוח – עד 5 הודעות בשעה מאותה כתובת, נגד ספאם */
+export const thanksLimiter = limiter(60, 5);

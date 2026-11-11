@@ -15,7 +15,7 @@ export const PASSWORD = 'Password123';
 /** מרוקן את כל הטבלאות לפני קובץ בדיקה */
 export async function resetDb() {
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "assignments", "meal_slots", "shabbatot", "products", "families", "users" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "thank_yous", "assignments", "meal_slots", "shabbatot", "products", "families", "users" RESTART IDENTITY CASCADE',
   );
   devOutbox.length = 0;
 }

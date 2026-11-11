@@ -16,6 +16,10 @@ describe('הרשאות מנהלת / מתנדבת', () => {
   const adminOnly: [string, string][] = [
     ['get', '/api/users'],
     ['post', '/api/users'],
+    ['post', '/api/users/bulk'],
+    ['get', '/api/thanks/admin'],
+    ['patch', '/api/thanks/1'],
+    ['delete', '/api/thanks/1'],
     ['get', '/api/users/1'],
     ['patch', '/api/users/1'],
     ['get', '/api/families'],

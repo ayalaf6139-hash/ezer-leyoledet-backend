@@ -7,6 +7,7 @@ import { productsRoutes } from './products.routes';
 import { shabbatotRoutes, slotsRoutes } from './shabbatot.routes';
 import { assignmentsRoutes } from './assignments.routes';
 import { jobsRoutes, reportsRoutes } from './reports.routes';
+import { thanksRoutes } from './thanks.routes';
 
 export const apiRoutes = Router();
 
@@ -29,3 +30,4 @@ apiRoutes.use('/slots', slotsRoutes);
 apiRoutes.use('/assignments', assignmentsRoutes);
 apiRoutes.use('/reports', reportsRoutes);
 apiRoutes.use('/jobs', jobsRoutes);
+apiRoutes.use('/thanks', thanksRoutes);

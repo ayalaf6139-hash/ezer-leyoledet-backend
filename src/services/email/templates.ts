@@ -90,6 +90,19 @@ export const emails = {
     };
   },
 
+  newThankYou(admin: Recipient, thankYou: { familyName: string; message: string }): EmailMessage {
+    return {
+      to: to(admin),
+      subject: `תודה חדשה ממתינה לאישור: ${thankYou.familyName}`,
+      html: layout(
+        'תודה חדשה ממתינה לאישור',
+        p(`<b>${escapeHtml(thankYou.familyName)}</b> כתבו:`) +
+          p(escapeHtml(thankYou.message).replace(/\n/g, '<br>')) +
+          button(`${env.CLIENT_URL}/admin/thanks`, 'לאישור התודה'),
+      ),
+    };
+  },
+
   accountApproved(user: Recipient): EmailMessage {
     return {
       to: to(user),
