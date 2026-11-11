@@ -1,13 +1,14 @@
-# הגדרות פריסה ל-Render (Blueprint).
+# הגדרות פריסה ל-Render (Blueprint) – האתר האמיתי של הארגון, מענף production.
+# גרסת ההגשה (ענף main) נשארת בשירות הנפרד ezer-leyoledet-api.
 # מסד הנתונים נמצא אצל ספק נפרד (Neon / Supabase), ולכן הוא לא מוגדר כאן –
 # את הכתובת שלו מכניסים ב-DATABASE_URL.
 services:
   - type: web
-    name: ezer-leyoledet-api
+    name: ezer-leyoledet-live-api
     runtime: node
     plan: free
     region: frankfurt
-    branch: main
+    branch: production
     # מתקין גם devDependencies (נדרשים ל-TypeScript ול-Prisma), יוצר את Prisma Client ומקמפל
     buildCommand: npm ci --include=dev && npm run build
     # מעדכן את מסד הנתונים (migrations), יוצר מנהלת אם הוגדרה, ומפעיל את השרת
