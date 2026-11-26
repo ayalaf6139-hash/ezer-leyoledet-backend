@@ -54,6 +54,7 @@ const IMPLEMENTED_ROUTES = [
   'GET /api/thanks/admin',
   'PATCH /api/thanks/{id}',
   'DELETE /api/thanks/{id}',
+  'DELETE /api/users/{id}',
 ];
 
 describe('בריאות השרת', () => {
