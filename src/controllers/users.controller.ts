@@ -40,3 +40,8 @@ export async function getById(req: Request, res: Response) {
 export async function update(req: Request, res: Response) {
   res.json(await usersService.updateUser(currentUser(req).id, idParam.parse(req.params).id, updateUserSchema.parse(req.body)));
 }
+
+export async function remove(req: Request, res: Response) {
+  await usersService.deleteUser(currentUser(req).id, idParam.parse(req.params).id);
+  res.status(204).end();
+}

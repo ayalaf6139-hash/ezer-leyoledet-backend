@@ -224,3 +224,28 @@ export async function updateUser(actorId: number, id: number, data: z.infer<type
   }
   return user;
 }
+
+export async function deleteUser(actorId: number, id: number) {
+  const target = await prisma.user.findUnique({ where: { id } });
+  if (!target) throw notFound('USER_NOT_FOUND', 'המתנדבת לא נמצאה');
+
+  if (id === actorId) {
+    throw badRequest('CANNOT_DELETE_SELF', 'לא ניתן למחוק את החשבון של עצמך');
+  }
+  if (target.role === 'ADMIN') {
+    throw badRequest('CANNOT_DELETE_ADMIN', 'לא ניתן למחוק מנהלת. יש קודם להסיר את הרשאת הניהול');
+  }
+
+  const activeAssignments = await prisma.assignment.count({ where: { userId: id, ...liveAssignments } });
+  if (activeAssignments > 0) {
+    throw conflict(
+      'USER_HAS_ASSIGNMENTS',
+      'למתנדבת יש שיבוצים במערכת, ולכן אי אפשר למחוק אותה. אפשר להשבית אותה במקום',
+    );
+  }
+
+  await prisma.$transaction([
+    prisma.assignment.deleteMany({ where: { userId: id } }),
+    prisma.user.delete({ where: { id } }),
+  ]);
+}

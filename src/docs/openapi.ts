@@ -835,6 +835,16 @@ export const openApiDocument = {
         success: { description: 'המתנדבת המעודכנת', schema: ref('AdminUser') },
         errors: [404],
       }),
+      delete: op({
+        tag: 'משתמשות',
+        summary: 'מחיקת מתנדבת',
+        description:
+          'מוחק את החשבון לצמיתות. אפשר למחוק רק מתנדבת שאין לה שיבוצים פעילים (למשל בקשת הצטרפות שגויה). למתנדבת עם שיבוצים יוחזר 409, ואפשר להשבית אותה במקום. אי אפשר למחוק מנהלת או את עצמך.',
+        auth: 'admin',
+        path: [idPath('מזהה המתנדבת')],
+        success: { status: 204, description: 'נמחקה' },
+        errors: [400, 404, 409],
+      }),
     },
 
     // ---------- משפחות ----------

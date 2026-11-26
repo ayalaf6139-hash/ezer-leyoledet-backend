@@ -16,3 +16,4 @@ usersRoutes.post('/', requireAdmin, users.create);
 usersRoutes.post('/bulk', requireAdmin, users.bulkCreate);
 usersRoutes.get('/:id', requireAdmin, users.getById);
 usersRoutes.patch('/:id', requireAdmin, users.update);
+usersRoutes.delete('/:id', requireAdmin, users.remove);
